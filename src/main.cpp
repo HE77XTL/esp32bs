@@ -1,23 +1,10 @@
 #include <Arduino.h>
-#include <SPIFFS.h>
+#include "ruleFileManager.h"
+#include "systemInfoManager.h"
 
-// 函数声明
-void writeJavaScriptFile();
-void readJavaScriptFile();
-
-// JavaScript代码内容（从examples/r_demo.js读取）
-const char* jsCode = R"(
-function fileTest(){
-    console.log("hello word")
-    console.log(111)
-}
-)";
-
-// 文件操作相关变量
-unsigned long lastWriteTime = 0;
-unsigned long lastReadTime = 0;
-const unsigned long READ_DELAY = 60000; // 1分钟 = 60000毫秒
-bool fileWritten = false;
+// 创建管理器实例
+SystemInfoManager systemInfo;
+RuleFileManager fileManager;
 
 void setup() {
   // 初始化串口通信
@@ -27,21 +14,16 @@ void setup() {
   delay(1000);
   
   Serial.println("=== ESP32 JavaScript文件系统测试 ===");
-  Serial.println("文件系统测试开始...");
+  Serial.println("系统初始化开始...");
   
-  // 初始化SPIFFS文件系统
-  if (!SPIFFS.begin(true)) {
-    Serial.println("SPIFFS初始化失败!");
-    return;
-  }
-  Serial.println("SPIFFS初始化成功!");
+  // 初始化系统信息管理器（包含SPIFFS初始化）
+  systemInfo.begin();
   
-  // 显示文件系统信息
-  size_t totalBytes = SPIFFS.totalBytes();
-  size_t usedBytes = SPIFFS.usedBytes();
-  Serial.printf("总空间: %u bytes\n", totalBytes);
-  Serial.printf("已用空间: %u bytes\n", usedBytes);
-  Serial.printf("可用空间: %u bytes\n", totalBytes - usedBytes);
+  // 显示所有系统信息
+  systemInfo.displayAllSystemInfo();
+  
+  // 初始化文件管理器
+  fileManager.begin();
   
   Serial.println("=== Setup完成 ===");
 }
@@ -54,85 +36,18 @@ void loop() {
   // 每5秒输出一次心跳
   if (currentTime - lastHeartbeat >= 5000) {
     Serial.printf("心跳: %lu ms\n", currentTime);
+    
+    // 显示内存状态
+    Serial.printf("内置SRAM可用: %.2f KB\n", systemInfo.getFreeMemory() / 1024.0);
+    if (systemInfo.hasPSRAM()) {
+      Serial.printf("PSRAM可用: %.2f KB\n", systemInfo.getFreePSRAM() / 1024.0);
+    }
+    
     lastHeartbeat = currentTime;
   }
   
-  // 写入JavaScript文件（只在开始时执行一次）
-  if (!fileWritten) {
-    writeJavaScriptFile();
-    fileWritten = true;
-    lastWriteTime = currentTime;
-    Serial.println("JavaScript文件写入完成，等待1分钟后读取...");
-  }
-  
-  // 1分钟后读取JavaScript文件
-  if (fileWritten && (currentTime - lastWriteTime >= READ_DELAY)) {
-    if (currentTime - lastReadTime >= READ_DELAY) {
-      readJavaScriptFile();
-      lastReadTime = currentTime;
-    }
-  }
+  // 更新文件管理器状态
+  fileManager.update();
   
   delay(1000); // 每秒检查一次
-}
-
-// 写入JavaScript文件函数
-void writeJavaScriptFile() {
-  Serial.println("\n=== 写入JavaScript文件 ===");
-  
-  // 打开文件进行写入
-  File file = SPIFFS.open("/r_demo.js", "w");
-  if (!file) {
-    Serial.println("无法创建JavaScript文件!");
-    return;
-  }
-  
-  // 写入JavaScript代码
-  if (file.print(jsCode)) {
-    Serial.println("JavaScript代码写入成功!");
-    Serial.println("写入内容:");
-    Serial.println(jsCode);
-    Serial.printf("文件大小: %u bytes\n", file.size());
-  } else {
-    Serial.println("JavaScript代码写入失败!");
-  }
-  
-  // 关闭文件
-  file.close();
-  Serial.println("=== JavaScript文件写入完成 ===\n");
-}
-
-// 读取JavaScript文件函数
-void readJavaScriptFile() {
-  Serial.println("\n=== 读取JavaScript文件内容 ===");
-  
-  // 检查文件是否存在
-  if (!SPIFFS.exists("/r_demo.js")) {
-    Serial.println("JavaScript文件不存在!");
-    return;
-  }
-  
-  // 打开文件进行读取
-  File file = SPIFFS.open("/r_demo.js", "r");
-  if (!file) {
-    Serial.println("无法打开JavaScript文件!");
-    return;
-  }
-  
-  // 显示文件信息
-  Serial.printf("文件大小: %u bytes\n", file.size());
-  Serial.println("JavaScript代码内容:");
-  Serial.println("----------------------------------------");
-  
-  // 读取并显示JavaScript代码
-  while (file.available()) {
-    String line = file.readStringUntil('\n');
-    Serial.println(line);
-  }
-  
-  Serial.println("----------------------------------------");
-  
-  // 关闭文件
-  file.close();
-  Serial.println("=== JavaScript文件读取完成 ===\n");
 }
